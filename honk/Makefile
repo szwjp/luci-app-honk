@@ -5,7 +5,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=honk
-PKG_VERSION:=2026.10.27
+PKG_VERSION:=2026.10.28
 PKG_RELEASE:=1
 
 # Pinned honk-core revision (daeuniverse/honk main), cross-compiled by
@@ -25,8 +25,8 @@ HONK_HASH_ARMV7?=SKIP
 # The Doona panel ships in this package. The core serves it from
 # /usr/share/doona, so the service must not depend on the arch-independent
 # LuCI package (which depends on honk) being installed.
-DOONA_ARCHIVE?=doona-f896a217-b0897cc7596e.tar.gz
-DOONA_HASH?=b0897cc7596e857b4a63916415cd2eb106a91a8f8c08d5c0b5d1fc61ff8700da
+DOONA_ARCHIVE?=doona-426597a5-15dd49ebdb0b.tar.gz
+DOONA_HASH?=15dd49ebdb0bd8b7f4ba74cf91e637709c722265f99f8642a22b3adfb9abf189
 DOONA_SOURCE_URL?=https://github.com/szwjp/luci-app-honk/releases/download/staging
 
 -include $(CURDIR)/generated-doona-stage.mk
