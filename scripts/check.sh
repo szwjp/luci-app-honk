@@ -259,7 +259,8 @@ grep -Fq "! rg -n 'MockBackend|mockBackend|mock-backend' dist" ci/build-doona.sh
 	echo 'the mock backend guard is missing from ci/build-doona.sh' >&2
 	exit 1
 }
-grep -Fq 'node tools/notices.mjs "$STAGE"' ci/build-doona.sh
+grep -Fq 'node tools/notices.mjs "$STAGE" "$notices_manifest"' ci/build-doona.sh
+grep -Fq 'dist/.vite/bundled-packages.json' ci/build-doona.sh
 grep -Fq 'for file in LICENSE NOTICE CHANGELOG.md README.md; do' ci/build-doona.sh
 grep -Fq 'rm -rf "$STAGE/fonts" "$STAGE/.vite"' ci/build-doona.sh
 

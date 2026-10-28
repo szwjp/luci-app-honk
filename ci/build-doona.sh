@@ -48,7 +48,14 @@ for file in LICENSE NOTICE CHANGELOG.md README.md; do
 	test -f "$WORK_DIR/source/$file"
 	cp "$WORK_DIR/source/$file" "$STAGE/$file"
 done
-node tools/notices.mjs "$STAGE"
+# Doona rc.2 changed tools/notices.mjs to require the Vite package manifest as
+# a second argument. Keep the one-argument form for releases before rc.2.
+notices_manifest="$WORK_DIR/source/dist/.vite/bundled-packages.json"
+if [ -f "$notices_manifest" ]; then
+	node tools/notices.mjs "$STAGE" "$notices_manifest"
+else
+	node tools/notices.mjs "$STAGE"
+fi
 test -s "$STAGE/THIRD-PARTY-NOTICES.txt"
 test -d "$STAGE/LICENSES"
 test -n "$(find "$STAGE/LICENSES" -type f -print -quit)"
