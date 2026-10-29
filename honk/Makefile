@@ -5,13 +5,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=honk
-PKG_VERSION:=2026.10.28
+PKG_VERSION:=2026.10.29
 PKG_RELEASE:=1
 
 # Pinned honk-core revision (daeuniverse/honk main), cross-compiled by
 # ci/build-core.sh. The per-architecture asset/hash are filled by that script;
 # keep a committed fallback so the feed still evaluates without a staging run.
-CORE_COMMIT:=1b95e2e90ac949e248270a746058eaab3f7de381
+CORE_COMMIT:=cb63d48cbf752548b6ac0fb9251b682932164f4a
 
 -include $(CURDIR)/generated-stage.mk
 
@@ -25,8 +25,8 @@ HONK_HASH_ARMV7?=SKIP
 # The Doona panel ships in this package. The core serves it from
 # /usr/share/doona, so the service must not depend on the arch-independent
 # LuCI package (which depends on honk) being installed.
-DOONA_ARCHIVE?=doona-426597a5-15dd49ebdb0b.tar.gz
-DOONA_HASH?=15dd49ebdb0bd8b7f4ba74cf91e637709c722265f99f8642a22b3adfb9abf189
+DOONA_ARCHIVE?=doona-931be7f1-7a99beba6b50.tar.gz
+DOONA_HASH?=7a99beba6b50c0567aaa0461e9e0dfc1ea9f9c0c126d9cd84e1ab1fe1f2a0af9
 DOONA_SOURCE_URL?=https://github.com/szwjp/luci-app-honk/releases/download/staging
 
 -include $(CURDIR)/generated-doona-stage.mk
