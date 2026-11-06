@@ -1,0 +1,65 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The interface hotplug trigger for honk.
+#
+# The init script defers the start while the WAN is not ready, so a router
+# that still has to dial does not start the core during the boot sequence.
+# This script starts it once the WAN arrives.
+#
+# The interface event and the uplink do not arrive in a fixed order: netifd
+# announces the interface and marks it up around the same time, and the
+# default route follows a moment later. The attempt is therefore deferred,
+# and the generation file collapses a burst of events into one attempt.
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+[ -r /usr/share/honk/wan.sh ] || exit 0
+. /usr/share/honk/wan.sh || exit 0
+
+# A device without an uplink never waits for one, and the boot sequence
+# already started the core there.
+honk_wan_configured || exit 0
+
+# The trigger belongs to the boot sequence: the core is started at boot
+# only when it is enabled, initialized and set to start on boot. Without
+# the boot flag the boot sequence never starts the core, so this trigger
+# has no business starting it either.
+[ "$(uci -q get honk.main.enabled 2>/dev/null)" = "1" ] || exit 0
+[ "$(uci -q get honk.main.initialized 2>/dev/null)" = "1" ] || exit 0
+[ "$(uci -q get honk.main.boot_enabled 2>/dev/null)" = "1" ] || exit 0
+
+# The generation file lives in the root only runtime directory: a file in
+# /tmp could be replaced by another user between the write and the read.
+[ -r /usr/share/honk/runtime-dir.sh ] || exit 0
+. /usr/share/honk/runtime-dir.sh || exit 0
+honk_generation_file=$(honk_runtime_path "hotplug-generation") || exit 0
+honk_runtime_prepare "hotplug-generation" || exit 0
+
+honk_generation="$$.$(date +%s)"
+echo "$honk_generation" > "$honk_generation_file" || exit 0
+
+(
+	# The uplink may still be missing a moment after the interface event.
+	sleep 5
+	[ "$(cat "$honk_generation_file" 2>/dev/null)" = "$honk_generation" ] || exit 0
+	honk_wan_ready || exit 0
+	/etc/init.d/honk running && exit 0
+	/etc/init.d/honk start
+	sleep 2
+	/etc/init.d/honk running && exit 0
+	# The start did not come up. The usual reason is a leftover of an
+	# earlier attempt: the listener port or the tun device is still
+	# taken. The retry ladder gives those a chance to clear on their own.
+	honk_attempt=0
+	while [ "$honk_attempt" -lt 10 ]; do
+		sleep 30
+		honk_attempt=$((honk_attempt + 1))
+		honk_wan_ready || exit 0
+		/etc/init.d/honk running && exit 0
+		/etc/init.d/honk start
+		sleep 2
+		/etc/init.d/honk running && exit 0
+	done
+	logger -t honk "the core did not come up after the WAN came up; it stays down until the next interface event"
+) &

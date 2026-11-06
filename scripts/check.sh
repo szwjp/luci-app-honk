@@ -324,6 +324,225 @@ test "$(grep -c '^[[:space:]]*procd_set_param env' honk/files/honk.init)" -eq 1 
 }
 grep -Fq 'DAE_LOCATION_ASSET=/usr/share/v2ray' honk/files/honk.init
 
+# The WAN readiness gate decides whether the core may start. A PPPoE router
+# only has its uplink after the dial finished, and honk resolves its WAN
+# interface from that uplink: a core that starts before it binds the LAN
+# hook without a WAN hook, which leaves every node failing its health check
+# and keeps the UDP as well as the multi leaf node groups fail closed.
+#
+# The rules are exercised with stand-ins for uci, ubus and jsonfilter, so
+# they can be checked without a router.
+bash <<'BASH'
+set -eu
+honk_gate_dir=$(mktemp -d)
+trap 'rm -rf "$honk_gate_dir"' EXIT
+mkdir -p "$honk_gate_dir/bin"
+
+cat > "$honk_gate_dir/bin/uci" <<'HONK_FAKE_UCI'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-q) shift ;;
+		*) break ;;
+	esac
+done
+case "${1:-}" in
+show)
+	for honk_fake_section in ${FAKE_UCI_SECTIONS:-}; do
+		printf 'network.%s=interface\n' "$honk_fake_section"
+	done
+	exit 0
+	;;
+get)
+	for honk_fake_entry in ${FAKE_UCI_VALUES:-}; do
+		case "$honk_fake_entry" in
+		"${2:-}="*)
+			printf '%s\n' "${honk_fake_entry#*=}"
+			exit 0
+			;;
+		esac
+	done
+	exit 1
+	;;
+esac
+exit 1
+HONK_FAKE_UCI
+
+cat > "$honk_gate_dir/bin/ubus" <<'HONK_FAKE_UBUS'
+#!/usr/bin/env bash
+honk_fake_name=""
+for honk_fake_arg in "$@"; do
+	case "$honk_fake_arg" in
+	network.interface.*) honk_fake_name=${honk_fake_arg#network.interface.} ;;
+	esac
+done
+honk_fake_up=false
+for honk_fake_if in ${FAKE_UBUS_UP:-}; do
+	[ "$honk_fake_if" = "$honk_fake_name" ] && honk_fake_up=true
+done
+printf '{"up":%s}\n' "$honk_fake_up"
+HONK_FAKE_UBUS
+
+cat > "$honk_gate_dir/bin/jsonfilter" <<'HONK_FAKE_JSONFILTER'
+#!/usr/bin/env bash
+case "$(cat)" in
+*'"up":true'*) printf 'true\n' ;;
+*'"up":false'*) printf 'false\n' ;;
+esac
+HONK_FAKE_JSONFILTER
+
+chmod +x "$honk_gate_dir/bin/uci" "$honk_gate_dir/bin/ubus" "$honk_gate_dir/bin/jsonfilter"
+PATH="$honk_gate_dir/bin:$PATH"
+export PATH
+
+. honk/files/wan.sh
+
+printf 'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n' > "$honk_gate_dir/route-empty"
+printf 'tun0\t0000080A\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n' >> "$honk_gate_dir/route-empty"
+printf 'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n' > "$honk_gate_dir/route-default"
+printf 'pppoe-wan\t00000000\t01D47F0E\t0003\t0\t0\t0\t00000000\t0\t0\t0\n' >> "$honk_gate_dir/route-default"
+printf 'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n' > "$honk_gate_dir/route-mask"
+printf 'br-lan\t00000000\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n' >> "$honk_gate_dir/route-mask"
+
+# A router with a PPPoE uplink and a VPN. The VPN section is static without
+# a gateway, so it is not an uplink: such an interface is up long before
+# the WAN is dialed and must not be mistaken for one.
+export FAKE_UCI_SECTIONS="loopback lan wan VPN"
+export FAKE_UCI_VALUES="network.wan.proto=pppoe network.VPN.proto=static"
+export HONK_ROUTE_FILE="$honk_gate_dir/route-empty"
+
+[ "$(honk_wan_sections)" = wan ] || {
+	echo 'the VPN section must not be treated as an uplink' >&2
+	exit 1
+}
+
+# The WAN is dialed: the interface is up.
+export FAKE_UBUS_UP=wan
+if ! honk_wan_ready; then
+	echo 'a dialed WAN must be ready' >&2
+	exit 1
+fi
+
+# The WAN is not dialed yet: the interface is down and there is no default
+# route. This is the state a router is in while PPPoE is still dialing,
+# and the core must not start there.
+export FAKE_UBUS_UP=VPN
+if honk_wan_ready; then
+	echo 'the core must not start while the WAN is still dialing' >&2
+	exit 1
+fi
+
+# The default route arrived before the interface was reported up.
+export FAKE_UBUS_UP=
+HONK_ROUTE_FILE="$honk_gate_dir/route-default"
+if ! honk_wan_ready; then
+	echo 'a default route is enough for the WAN to count as ready' >&2
+	exit 1
+fi
+
+# A device without an uplink never waits for one.
+export FAKE_UCI_SECTIONS="loopback lan"
+export FAKE_UCI_VALUES=
+export FAKE_UBUS_UP=
+HONK_ROUTE_FILE="$honk_gate_dir/route-empty"
+if honk_wan_configured; then
+	echo 'a device without an uplink must not be gated' >&2
+	exit 1
+fi
+if ! honk_wan_ready; then
+	echo 'a device without an uplink must start right away' >&2
+	exit 1
+fi
+
+# A static uplink with a gateway is an uplink.
+export FAKE_UCI_SECTIONS="loopback lan wan"
+export FAKE_UCI_VALUES="network.wan.proto=static network.wan.gateway=192.168.1.1"
+[ "$(honk_wan_sections)" = wan ] || {
+	echo 'a static uplink with a gateway must be recognized' >&2
+	exit 1
+}
+
+# A route with a zero destination but a non zero mask is not a default route.
+export FAKE_UCI_SECTIONS="loopback lan wan"
+export FAKE_UCI_VALUES="network.wan.proto=pppoe"
+export FAKE_UBUS_UP=
+HONK_ROUTE_FILE="$honk_gate_dir/route-mask"
+if honk_has_default_route; then
+	echo 'a route with a non zero mask is not a default route' >&2
+	exit 1
+fi
+
+# The gate holds the boot sequence back while the WAN is dialing, but a
+# start that the operator asked for goes through the lifecycle helper,
+# which marks it. Every caller of that helper waits for the core and would
+# read a deferred start as a failed one.
+export FAKE_UCI_SECTIONS="loopback lan wan"
+export FAKE_UCI_VALUES="network.wan.proto=pppoe"
+export FAKE_UBUS_UP=
+HONK_ROUTE_FILE="$honk_gate_dir/route-empty"
+unset HONK_START_EXPLICIT
+if ! honk_wan_gate_blocks; then
+	echo 'the boot sequence must wait for the WAN' >&2
+	exit 1
+fi
+HONK_START_EXPLICIT=1
+export HONK_START_EXPLICIT
+if honk_wan_gate_blocks; then
+	echo 'an explicitly requested start must not be held back' >&2
+	exit 1
+fi
+unset HONK_START_EXPLICIT
+BASH
+
+# The gate is wired into the init script and the hotplug trigger is
+# installed, so a router that still has to dial starts the core when the
+# WAN comes up instead of during the boot sequence.
+grep -Fq '/usr/share/honk/wan.sh' honk/files/honk.init
+grep -Fq 'honk_wan_gate_blocks' honk/files/honk.init
+grep -Fq 'honk_core_running' honk/files/honk.init
+grep -Fq 'files/wan.sh' honk/Makefile
+grep -Fq 'files/iface/honk' honk/Makefile
+grep -Fq '/etc/hotplug.d/iface/99-honk' honk/Makefile
+sh -n honk/files/iface/honk
+grep -Fq 'honk_runtime_path' honk/files/iface/honk
+
+# The gate belongs to the boot sequence. The lifecycle helper marks the
+# starts that the operator asked for, because its callers wait for the core
+# and would read a deferred start as a failed one.
+grep -Fq 'HONK_START_EXPLICIT=1 /etc/init.d/honk start' honk/files/lifecycle.sh || {
+	echo 'the lifecycle helper must mark an explicitly requested start' >&2
+	exit 1
+}
+grep -Fq 'HONK_START_EXPLICIT' honk/files/wan.sh || {
+	echo 'the WAN gate must let an explicitly requested start through' >&2
+	exit 1
+}
+# The trigger starts the core where the boot sequence would have started
+# it, so it takes the same flags into account.
+grep -Fq 'honk.main.boot_enabled' honk/files/iface/honk || {
+	echo 'the interface trigger must only start a core that starts on boot' >&2
+	exit 1
+}
+
+# procd gives up on an instance once its crashes exceed the retry limit, so
+# a core that died five times within the threshold stayed down until the
+# router was rebooted, and a WAN that flapped could leave the service dead
+# for the rest of the day. A limit of zero respawns the instance for ever.
+grep -Fq 'procd_set_param respawn 3600 30 0' honk/files/honk.init || {
+	echo 'the core must be respawned for ever instead of being given up on' >&2
+	exit 1
+}
+
+# The procd helpers of the shell library dump and clean up the JSON context
+# that the instance registration builds, so they cannot be used inside
+# start_service. The lifecycle helper of this package reads the service list
+# with ubus instead and is safe there.
+! grep -Eq '(^|[^[:alnum:]_])procd_running' honk/files/honk.init || {
+	echo 'the init script must not use the procd helpers inside start_service' >&2
+	exit 1
+}
+grep -Fq 'honk_lifecycle_procd_running' honk/files/honk.init
+
 # The panel link follows the address the browser already uses for the router.
 grep -Fq 'window.location' luci-app-honk/htdocs/luci-static/resources/view/honk/rpc.js
 grep -Fq "isIpLiteral" luci-app-honk/htdocs/luci-static/resources/view/honk/rpc.js

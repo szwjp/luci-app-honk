@@ -353,6 +353,10 @@ stage_honk() { # <stage-dir> <arch>
 	install -m 0755 "$ROOT/honk/files/honk.init" "$idir/etc/init.d/honk"
 	install -d -m 0755 "$idir/etc/uci-defaults"
 	install -m 0755 "$ROOT/honk/files/90-honk-boot" "$idir/etc/uci-defaults/90-honk"
+	# The interface hotplug trigger starts the core when the WAN comes up,
+	# because the init script defers the start until the WAN is ready.
+	install -d -m 0755 "$idir/etc/hotplug.d/iface"
+	install -m 0755 "$ROOT/honk/files/iface/honk" "$idir/etc/hotplug.d/iface/99-honk"
 
 	install -d -m 0755 "$idir/usr/share/honk"
 	install -m 0644 "$ROOT/honk/files/config.dae" "$idir/usr/share/honk/default-config.dae"
@@ -374,6 +378,7 @@ stage_honk() { # <stage-dir> <arch>
 	install -m 0755 "$ROOT/honk/files/system-config.sh" "$idir/usr/share/honk/system-config.sh"
 	install -m 0755 "$ROOT/honk/files/lifecycle.sh" "$idir/usr/share/honk/lifecycle.sh"
 	install -m 0755 "$ROOT/honk/files/runtime-dir.sh" "$idir/usr/share/honk/runtime-dir.sh"
+	install -m 0755 "$ROOT/honk/files/wan.sh" "$idir/usr/share/honk/wan.sh"
 	install -m 0755 "$ROOT/honk/files/maintenance.sh" "$idir/usr/share/honk/maintenance.sh"
 	install -m 0755 "$ROOT/honk/files/job.sh" "$idir/usr/share/honk/job.sh"
 	install -m 0755 "$ROOT/honk/files/update.sh" "$idir/usr/share/honk/update.sh"

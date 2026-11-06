@@ -129,6 +129,10 @@ define Package/honk/install
 	$(INSTALL_BIN) $(CURDIR)/files/honk.init $(1)/etc/init.d/honk
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) $(CURDIR)/files/90-honk-boot $(1)/etc/uci-defaults/90-honk
+	# The interface hotplug trigger starts the core when the WAN comes up,
+	# because the init script defers the start until the WAN is ready.
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
+	$(INSTALL_BIN) $(CURDIR)/files/iface/honk $(1)/etc/hotplug.d/iface/99-honk
 
 	$(INSTALL_DIR) $(1)/usr/share/honk
 	$(INSTALL_DATA) $(CURDIR)/files/config.dae $(1)/usr/share/honk/default-config.dae
@@ -140,6 +144,7 @@ define Package/honk/install
 	$(INSTALL_BIN) $(CURDIR)/files/control.sh $(1)/usr/share/honk/control.sh
 	$(INSTALL_BIN) $(CURDIR)/files/lock.sh $(1)/usr/share/honk/lock.sh
 	$(INSTALL_BIN) $(CURDIR)/files/runtime-dir.sh $(1)/usr/share/honk/runtime-dir.sh
+	$(INSTALL_BIN) $(CURDIR)/files/wan.sh $(1)/usr/share/honk/wan.sh
 	$(INSTALL_BIN) $(CURDIR)/files/firewall.sh $(1)/usr/share/honk/firewall.sh
 	$(INSTALL_BIN) $(CURDIR)/files/kernel.sh $(1)/usr/share/honk/kernel.sh
 	$(INSTALL_BIN) $(CURDIR)/files/system-config.sh $(1)/usr/share/honk/system-config.sh

@@ -193,7 +193,11 @@ honk_lifecycle_start() {
 	hlp_port=$HONK_LIFECYCLE_PORT
 	if honk_lifecycle_port_open "$hlp_port"; then echo "honk lifecycle: listener port remains occupied" >&2; return 1; fi
 	if [ -n "${HONK_MAINT_CAP:-}" ]; then export HONK_MAINT_CAP; fi
-	/etc/init.d/honk start >/dev/null 2>&1
+	# The start was asked for, so the WAN gate of the init script does not
+	# apply to it: that gate belongs to the boot sequence, where nothing
+	# waits for the core, while every caller of this function waits for the
+	# core to come up and would read a deferred start as a failed one.
+	HONK_START_EXPLICIT=1 /etc/init.d/honk start >/dev/null 2>&1
 	hlp_start_status=$?
 	unset HONK_MAINT_CAP
 	[ "$hlp_start_status" = 0 ] || { echo "honk lifecycle: init start failed" >&2; return 1; }

@@ -246,6 +246,7 @@ OpenWrt 24.10 及更早版本使用 Linux 6.6，低于 honk 要求的 6.12。**�
 
 ## 已知限制
 
+- **开机时核心会等到上行就绪才启动。** honk 的 WAN 接口配成 `auto`，上游按「最低 metric 的 IPv4 默认路由」解析它，而 PPPoE 拨号完成前没有这条路由。核心若在那之前启动，会绑上 LAN hook 却没有 WAN hook：节点健康检查全败，UDP 与多叶节点出站处于 fail-closed 状态。因此开机序列里的启动在 WAN 就绪前会被推迟（日志里记 "the WAN is not ready yet"），由 `/etc/hotplug.d/iface/99-honk` 在上行到位后把核心拉起。面板、设置与升级路径发起的启动不受这个限制，它们本来就在等核心就绪。
 - **不能在 macOS 上构建。** Doona 源码含仅大小写不同的文件，构建脚本会主动探测并拒绝在大小写不敏感的文件系统上继续。
 - **OpenWrt SDK 已完全移除。** 改用 apk-tools 直接出包，不再下载 272 MB 的 SDK、不再构建约 1 GB 的 `immortalwrt/sdk` 镜像，矩阵从 12 个 job 变成 1 个。代价是包元数据的生成逻辑由本仓库自己维护（对照 `include/package-pack.mk` 抄写），`scripts/check.sh` 会断言 Makefile 里每个安装目标都在 `ci/build-apk.sh` 里被 stage，防止两边漂移。
 - **只支持 25.12 及以上。** 24.10 的 opkg/`.ipk` 通道已停止——apk-tools 3 产不出 ipk，保持两套打包语义不划算。
