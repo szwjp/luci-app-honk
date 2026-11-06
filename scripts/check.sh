@@ -829,6 +829,29 @@ for var in APK_TOOLS_SHA256 APK_COMPAT LUCI_COMMIT; do
 	grep -q "^${var}=." ci/pins.env || { echo "ci/pins.env is missing $var" >&2; exit 1; }
 done
 test "$(sed -n 's/^APK_TOOLS_SHA256=//p' ci/pins.env | tr -d '\n' | wc -c)" -eq 64
+# Alpine removes the previous release from its repository when it publishes a
+# new one, so a stale apk-tools URL answers with a 404 and the build stops.
+# The version and the file name in the URL have to agree, and the file name
+# has to carry the version: a mismatch is what turns into a dead download.
+apk_tools_version=$(sed -n 's/^APK_TOOLS_VERSION=//p' ci/pins.env)
+apk_tools_url=$(sed -n 's/^APK_TOOLS_URL=//p' ci/pins.env)
+case "$apk_tools_url" in
+*/apk-tools-static-"$apk_tools_version".apk) ;;
+*)
+	echo "the apk-tools URL $apk_tools_url does not name the pinned version $apk_tools_version" >&2
+	exit 1
+	;;
+esac
+# The upstream version is what the binary reports; the release adds the
+# Alpine packaging revision. The two must not drift apart either.
+apk_tools_upstream=$(sed -n 's/^APK_TOOLS_UPSTREAM=//p' ci/pins.env)
+case "$apk_tools_version" in
+"$apk_tools_upstream"-r[0-9]*) ;;
+*)
+	echo "the apk-tools version $apk_tools_version does not match the upstream version $apk_tools_upstream" >&2
+	exit 1
+	;;
+esac
 
 # Every install target named in a Makefile must be staged by the packer.
 targets_file=$(mktemp)
