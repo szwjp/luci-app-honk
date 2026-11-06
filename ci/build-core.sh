@@ -127,23 +127,20 @@ STAGE_MK="$ROOT/honk/generated-stage.mk"
 	echo "PKG_SOURCE_URL:=https://github.com/szwjp/luci-app-honk/releases/download/${HONK_SOURCE_TAG:-staging}/"
 } > "$STAGE_MK"
 
-# aya 0.14.0 exhaustively destructures libc::timespec, which breaks when
-# musl32_time64 changes the struct layout on 32-bit targets (extra padding
-# fields). One-line fix to the vendored source; harmless on 64-bit.
+# aya exhaustively destructures libc::timespec, which breaks when musl32_time64
+# changes the struct layout on 32-bit targets (extra padding fields). One-line
+# fix to the vendored source; harmless on 64-bit.
+#
+# The aya version is read from the upstream lock file instead of being written
+# down here: upstream moves aya on its own schedule, and a pinned version broke
+# the daily release job with a bare "exit 2" and no explanation, because the
+# failing `ls` inside a command substitution aborted the script before it
+# could print the reason.
 if ! cargo +"$TOOLCHAIN" fetch --locked --target x86_64-unknown-linux-musl; then
 	echo "cargo fetch failed; the vendored aya patch cannot be applied" >&2
 	exit 1
 fi
-aya_utils=$(ls "$CARGO_HOME"/registry/src/*/aya-0.14.0/src/programs/utils.rs 2>/dev/null | head -n 1)
-if [ -z "$aya_utils" ]; then
-	echo "aya 0.14.0 sources not found under $CARGO_HOME/registry/src; the patch has to be updated" >&2
-	exit 1
-fi
-sed -i 's/let libc::timespec { tv_sec, tv_nsec } = time;/let libc::timespec { tv_sec, tv_nsec, .. } = time;/' "$aya_utils"
-grep -q 'tv_sec, tv_nsec, \.\.' "$aya_utils" || {
-	echo "the aya timespec patch did not apply to $aya_utils" >&2
-	exit 1
-}
+bash "$ROOT/ci/aya-patch.sh" "$CARGO_HOME" "$WORK_DIR/source/Cargo.lock"
 
 # honk-core's monotonic_nanos() builds libc::timespec with a struct literal,
 # which breaks on 32-bit musl with musl32_time64 (private __pad0 field), and

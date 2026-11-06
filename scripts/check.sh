@@ -676,6 +676,112 @@ while IFS= read -r action; do
 	[ "${#ref}" -eq 40 ] || { echo "the action $action is not pinned to a full commit" >&2; exit 1; }
 done < <(grep -rhoE 'uses: [^ ]+' .github/workflows/ | sed 's/^uses: //' | sort -u)
 
+# The core build patches the vendored aya sources for the 32-bit musl time64
+# struct layout. The aya version must come from the upstream lock file: a
+# hardcoded version broke the daily release job with a bare "exit 2" and no
+# explanation, because the failing `ls` inside a command substitution aborted
+# the script before it could print the reason. Upstream moves aya on its own
+# schedule, so the version cannot be a constant here.
+bash -n ci/aya-patch.sh
+! grep -qE 'aya-0\.[0-9]+\.[0-9]+' ci/build-core.sh || {
+	echo 'the core build must not pin an aya version; it comes from the upstream lock file' >&2
+	exit 1
+}
+grep -Fq 'ci/aya-patch.sh' ci/build-core.sh || {
+	echo 'the core build must patch the vendored aya sources through ci/aya-patch.sh' >&2
+	exit 1
+}
+
+bash <<'BASH'
+set -eu
+aya_dir=$(mktemp -d)
+trap 'rm -rf "$aya_dir"' EXIT
+registry="$aya_dir/home/registry/src/index.crates.io-0000000000000000"
+mkdir -p "$registry/aya-0.16.0/src/programs"
+cat > "$registry/aya-0.16.0/src/programs/utils.rs" <<'AYA_UTILS'
+pub fn elapsed(start: &Instant) -> Duration {
+    let time = start.elapsed();
+    let libc::timespec { tv_sec, tv_nsec } = time;
+    Duration::new(tv_sec as u64, tv_nsec as u32)
+}
+AYA_UTILS
+cat > "$aya_dir/Cargo.lock" <<'AYA_LOCK'
+version = 4
+
+[[package]]
+name = "aya-ebpf-bindings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0000000000000000000000000000000000000000000000000000000000000001"
+
+[[package]]
+name = "aya"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0000000000000000000000000000000000000000000000000000000000000002"
+
+[[package]]
+name = "aya-obj"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0000000000000000000000000000000000000000000000000000000000000003"
+AYA_LOCK
+utils="$registry/aya-0.16.0/src/programs/utils.rs"
+
+# The version comes from the lock file: aya-ebpf-bindings and aya-obj are
+# different packages and must not be mistaken for aya.
+bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/Cargo.lock" >/dev/null
+grep -qF 'let libc::timespec { tv_sec, tv_nsec, .. } = time;' "$utils" || {
+	echo 'the aya timespec patch did not reach the source' >&2
+	exit 1
+}
+# The patch is idempotent: a second run must not fail on the already patched
+# line.
+bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/Cargo.lock" >/dev/null
+
+# The version in the lock and the version in the registry can disagree, which
+# is what a hardcoded version used to turn into an unexplained exit. The
+# patch has to find the sources anyway.
+mkdir -p "$registry/aya-0.14.0/src/programs"
+printf '    let libc::timespec { tv_sec, tv_nsec } = time;\n' > "$registry/aya-0.14.0/src/programs/utils.rs"
+cat > "$aya_dir/stale.lock" <<'AYA_STALE_LOCK'
+[[package]]
+name = "aya"
+version = "0.16.0"
+AYA_STALE_LOCK
+bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/stale.lock" >/dev/null
+grep -qF 'let libc::timespec { tv_sec, tv_nsec, .. } = time;' "$registry/aya-0.14.0/src/programs/utils.rs" || {
+	echo 'the aya patch must find the sources even when the lock names another version' >&2
+	exit 1
+}
+
+# A registry without any aya is a real failure, and it has to say so: the
+# bare "exit 2" without a word of explanation is what broke the release job.
+mkdir -p "$aya_dir/empty/registry/src/index.crates.io-0000000000000000/aya-obj-0.6.0/src"
+if bash ci/aya-patch.sh "$aya_dir/empty" "$aya_dir/Cargo.lock" >/dev/null 2>"$aya_dir/error"; then
+	echo 'the aya patch must fail when the sources are missing' >&2
+	exit 1
+fi
+grep -q 'aya' "$aya_dir/error" || {
+	echo 'the aya patch failure must name the missing sources' >&2
+	exit 1
+}
+
+# A lock without an aya entry means upstream does not depend on aya any more:
+# there is nothing to patch, and that must not fail the build.
+cat > "$aya_dir/no-aya.lock" <<'AYA_NO_AYA_LOCK'
+[[package]]
+name = "aya-obj"
+version = "0.6.0"
+AYA_NO_AYA_LOCK
+bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/no-aya.lock" >/dev/null
+
+# A source that upstream already rewrote needs no patch, and that is not a
+# failure: the destructuring is simply gone.
+printf 'pub fn elapsed(start: &Instant) -> Duration {\n    start.elapsed()\n}\n' > "$utils"
+bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/Cargo.lock" >/dev/null
+BASH
+
 # The packaging and the runtime smoke tests are part of the pull request
 # pipeline: a packaging defect must not wait for the next release.
 test -f ci/smoke-native-api.sh
