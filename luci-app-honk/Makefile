@@ -5,8 +5,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-honk
-PKG_VERSION:=2026.10.23
-PKG_RELEASE:=3
+PKG_VERSION:=0.1.0
+PKG_RELEASE:=5
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 
 # The Doona panel lives in the honk package: the core serves it from
