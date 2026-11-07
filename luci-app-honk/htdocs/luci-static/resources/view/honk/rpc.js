@@ -192,7 +192,7 @@ function tokenMessage(token) {
 		invalid_credentials: _('The administrator name or password is not correct.'),
 		core_missing: _('The Honk core binary is missing. Reinstall the package.'),
 		ui_assets_missing: _('The Honk panel assets are missing. Reinstall the honk package.'),
-		udp_trace_unavailable: _('The kernel has no function tracer, so UDP and QUIC traffic is not proxied. TCP traffic is unaffected.'),
+		udp_trace_unavailable: _('The kernel lacks the optional UDP receive-trace support (ftrace/BTF), so kernel route evidence is incomplete. UDP and QUIC traffic is still proxied.'),
 		administrator_exists_reuse_credentials_or_reset_state: _('An administrator already exists. Use the same credentials or reset the data.'),
 		invalid_settings_json: _('The settings request is not valid.'),
 		settings_too_large: _('The settings request is too large.'),

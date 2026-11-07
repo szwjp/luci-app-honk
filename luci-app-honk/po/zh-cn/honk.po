@@ -841,8 +841,8 @@ msgid "The Honk panel assets are missing. Reinstall the honk package."
 msgstr "Honk 面板资源缺失，请重新安装 honk 包。"
 
 #: htdocs/luci-static/resources/view/honk/rpc.js:183
-msgid "The kernel has no function tracer, so UDP and QUIC traffic is not proxied. TCP traffic is unaffected."
-msgstr "内核未启用 function tracer，UDP 与 QUIC 流量不会被代理，TCP 流量不受影响。"
+msgid "The kernel lacks the optional UDP receive-trace support (ftrace/BTF), so kernel route evidence is incomplete. UDP and QUIC traffic is still proxied."
+msgstr "内核缺少可选的 UDP 接收追踪支持（ftrace/BTF），记录的内核路由证据不完整；UDP 与 QUIC 流量仍会被代理。"
 
 #: htdocs/luci-static/resources/view/honk/rpc.js:184
 msgid "An administrator already exists. Use the same credentials or reset the data."

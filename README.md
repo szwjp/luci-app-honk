@@ -219,24 +219,40 @@ ci/build-core.sh
 | `v2ray-geoip` / `v2ray-geosite` | 路由 GeoIP/GeoSite 数据 |
 | `rpcd` / `luci-base` / `cgi-io` | LuCI 运行依赖 |
 
-内核需要 BTF（`/sys/kernel/btf/vmlinux`），honk-core 用 CO-RE eBPF，缺少 BTF 会启动失败。
+启动需要可读的 raw BTF：优先 `/sys/kernel/btf/vmlinux`（内核开启 `CONFIG_DEBUG_INFO_BTF`），
+否则退到 `/usr/lib/debug/boot/vmlinux`（OpenWrt 的 `vmlinux-btf` 包提供），也可以用
+`HONK_VMLINUX_BTF` 指定；三处都不可读时启动失败。
 
-内核还需要 **function tracer**（`CONFIG_FUNCTION_TRACER`）：UDP 接收路径是用 fentry
-挂在内核函数上的，没有它 eBPF 挂不上，honk 就只代理 TCP，UDP 与 QUIC 流量直接漏过去。
-官方 ImmortalWrt 的内核默认没有开这个选项，所以：
+### UDP 与接收追踪（`udp_trace_unavailable`）
 
-- LuCI 的概览页与「系统检查」会给出 `udp_trace_unavailable` 警告（不影响服务启动）；
-- `available_tracers` 里只有 `nop` 时就是这个状态。
+UDP 的原始目标地址主路径是 socket 辅助数据（IPv4 `IP_RECVORIGDSTADDR`、IPv6
+original-destination cmsg），**不依赖 ftrace**。`CONFIG_FUNCTION_TRACER` /
+`CONFIG_DYNAMIC_FTRACE` 与内核自带 BTF 只用于**可选的 UDP receive-trace 回退**：
+辅助元数据不可用时，fentry/fexit 程序在内核接收路径上补充「内核路由证据」。
 
-要代理 UDP/QUIC，需要自己编译带 `CONFIG_FUNCTION_TRACER=y` 的内核；只跑 TCP 的话
-现有内核就够。判断方法：
+缺少这些选项时只是回退不可用，**不影响 UDP/QUIC 的代理与投递**：LuCI 的概览页与
+「系统检查」会给出 `udp_trace_unavailable` 警告，记录的内核路由证据不完整（上游文档
+原文：Missing tracing affects recorded kernel route evidence, not routing or UDP
+delivery）。官方 ImmortalWrt 内核默认没有开启 function tracer（`available_tracers`
+里只有 `nop`），因此这个警告会出现，但 UDP/QUIC 仍按辅助数据路径正常代理；只为代理
+UDP/QUIC 并不需要自编内核，只有想让内核路由证据完整时才需要打开这些选项。
+
+回退所需的内核选项：
+
+```text
+CONFIG_DEBUG_INFO_BTF=y
+CONFIG_FUNCTION_TRACER=y
+CONFIG_DYNAMIC_FTRACE=y
+```
+
+判断方法：
 
 ```sh
 cat /sys/kernel/tracing/available_tracers 2>/dev/null \
   || cat /sys/kernel/debug/tracing/available_tracers
 ```
 
-输出里有 `function` 就是支持的，只有 `nop` 就是不支持。
+输出里只有 `nop` 表示回退不可用（仅影响证据，不影响代理）。
 
 ## 系统要求
 

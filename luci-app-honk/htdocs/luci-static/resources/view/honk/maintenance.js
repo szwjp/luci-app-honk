@@ -506,8 +506,8 @@ return view.extend({
 			repairMessage.textContent = _('Repairing…');
 			honk.repair().then(honk.ensureOk).then(function(result) {
 				var text = honk.resultMessage(result, _('Repair completed.'));
-				// A repair cannot fix a kernel without the function tracer, so
-				// the reason travels with the result instead of being lost.
+				// A repair cannot enable the optional UDP receive-trace
+				// support, so the reason travels with the result.
 				if (result && result.warning) {
 					var warning = honk.statusIssue(result.warning);
 					if (warning) text += ' ' + warning;

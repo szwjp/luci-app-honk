@@ -212,12 +212,19 @@ grep -Fq '"/tmp/honk-runtime/restore.tar.gz": [ "write" ]' luci-app-honk/root/us
 # The panel assets are optional: the core serves the fallback page that ships
 # with the honk package when they are gone, so a missing panel must not take
 # the service down with it.
-# The kernel function tracer decides whether UDP can be proxied at all. A
-# kernel without it has to be reported instead of silently degrading.
+# The kernel function tracer only gates the optional UDP receive-trace
+# fallback; UDP and QUIC proxying continues without it. Pin the corrected
+# impact wording so the old "UDP is not proxied" claim cannot come back.
 grep -Fq 'honk_kernel_tracer_available' honk/files/kernel.sh
 grep -Fq 'honk_kernel_tracer_available' honk/files/control.sh
 grep -Fq 'honk_kernel_tracer_available' luci-app-honk/root/usr/libexec/rpcd/honk
 grep -Fq 'udp_trace_unavailable' luci-app-honk/htdocs/luci-static/resources/view/honk/rpc.js
+grep -Fq 'UDP and QUIC traffic is still proxied' luci-app-honk/htdocs/luci-static/resources/view/honk/rpc.js
+grep -Fq 'Missing tracing affects recorded kernel route evidence' README.md
+! grep -Fq 'UDP and QUIC traffic is not proxied' luci-app-honk/htdocs/luci-static/resources/view/honk/rpc.js || {
+	echo 'rpc.js must not claim that a missing function tracer stops UDP/QUIC proxying' >&2
+	exit 1
+}
 grep -Fq 'files/kernel.sh' honk/Makefile
 
 grep -Fq 'honk_ui_path()' honk/files/control.sh

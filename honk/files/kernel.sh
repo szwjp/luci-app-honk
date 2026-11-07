@@ -3,10 +3,11 @@
 # Kernel capability probes that are shared between the control script and the
 # rpc daemon.
 
-# The UDP path hooks the socket receive path with fentry, which needs the
-# kernel function tracer. A kernel built without CONFIG_FUNCTION_TRACER only
-# offers "nop", and the core then degrades to TCP: UDP and QUIC traffic is no
-# longer proxied, and it says so only in the core log.
+# The UDP datapath recovers the original destination from socket ancillary
+# data, which needs no tracing. The kernel function tracer only enables the
+# optional receive-trace fallback that records kernel route evidence when
+# that ancillary metadata is unavailable: a kernel without it reports
+# "udp_trace_unavailable" but still proxies UDP and QUIC.
 #
 # The tracing filesystem is not mounted everywhere, so an unreadable
 # available_tracers means "unknown" and not "unavailable": a false warning

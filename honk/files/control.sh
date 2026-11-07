@@ -562,8 +562,8 @@ diagnose() {
 	check_network >/dev/null 2>&1 || errors="$errors lan_network_unavailable"
 	network_settings >/dev/null 2>&1 || errors="$errors lan_ipv4_unavailable"
 	check_kernel >/dev/null 2>&1 || errors="$errors kernel_requirements_unmet"
-	# Not a start blocker: without the kernel function tracer the core still
-	# proxies TCP, it just cannot hook the UDP receive path.
+	# Not a start blocker: the kernel function tracer only gates the optional
+	# UDP receive-trace fallback; UDP and QUIC proxying continues without it.
 	honk_kernel_tracer_available || errors="$errors udp_trace_unavailable"
 	command -v curl >/dev/null 2>&1 || errors="$errors curl_missing"
 	if [ "$running" != 1 ]; then
@@ -696,9 +696,9 @@ repair() {
 	if honk_kernel_tracer_available; then
 		echo '{"ok":true,"message":"system_config_repaired"}'
 	else
-		# The repair cannot fix a kernel without the function tracer, so it
-		# is reported instead of being silently swallowed.
-		logger -t honk "kernel function tracer unavailable; UDP traffic is not proxied"
+		# The repair cannot enable the optional UDP receive-trace fallback, so
+		# it is reported instead of being silently swallowed.
+		logger -t honk "kernel function tracer unavailable; UDP receive-trace evidence is incomplete"
 		echo '{"ok":true,"message":"system_config_repaired","warning":"udp_trace_unavailable"}'
 	fi
 }
