@@ -142,29 +142,11 @@ if ! cargo +"$TOOLCHAIN" fetch --locked --target x86_64-unknown-linux-musl; then
 fi
 bash "$ROOT/ci/aya-patch.sh" "$CARGO_HOME" "$WORK_DIR/source/Cargo.lock"
 
-# honk-core's monotonic_nanos() builds libc::timespec with a struct literal,
-# which breaks on 32-bit musl with musl32_time64 (private __pad0 field), and
-# mixes i64 tv_sec with i32 tv_nsec in saturating_add. Patch the pinned
-# source; both changes are no-ops on 64-bit.
-driver_rs="$WORK_DIR/source/crates/honk-core/src/control/udp_endpoint/driver.rs"
-python3 - "$driver_rs" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old_struct = """    let mut ts = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };"""
-new_struct = """    let mut ts: libc::timespec = unsafe { std::mem::zeroed() };"""
-assert old_struct in s, "driver.rs timespec literal not found"
-s = s.replace(old_struct, new_struct)
-old_add = ".saturating_add(ts.tv_nsec)"
-new_add = ".saturating_add(ts.tv_nsec as i64)"
-assert old_add in s, "driver.rs tv_nsec add not found"
-s = s.replace(old_add, new_add)
-open(p, "w").write(s)
-print("patched driver.rs for 32-bit time_t")
-PYEOF
+# honk builds zero-valued libc::timespec literals in more than one module;
+# with musl32_time64 the struct has a private padding field, so the literal
+# has to start from zeroed(). The patcher scans the tree rather than a path
+# because upstream moved the pattern between pins (see the script).
+bash "$ROOT/ci/honk-timespec-patch.sh" "$WORK_DIR/source"
 
 for arch in $CORE_ARCHS; do
 	target="${TARGETS[$arch]}"

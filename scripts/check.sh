@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
-for tool in bash sh node sha256sum git tar sqlite3; do
+for tool in bash sh node python3 sha256sum git tar sqlite3; do
 	command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
 
@@ -787,6 +787,65 @@ bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/no-aya.lock" >/dev/null
 # failure: the destructuring is simply gone.
 printf 'pub fn elapsed(start: &Instant) -> Duration {\n    start.elapsed()\n}\n' > "$utils"
 bash ci/aya-patch.sh "$aya_dir/home" "$aya_dir/Cargo.lock" >/dev/null
+BASH
+
+# The core build also patches zero-valued libc::timespec literals in the pinned
+# honk sources: with the forced musl32_time64 cfg the struct has a private
+# padding field and the literal cannot name every field. The site moved
+# upstream (the UDP driver, then the URLTest coarse clock), so the patcher
+# scans the tree; the fixture covers both files plus idempotency.
+bash -n ci/honk-timespec-patch.sh
+grep -Fq 'ci/honk-timespec-patch.sh' ci/build-core.sh || {
+	echo 'the core build must patch the pinned honk sources through ci/honk-timespec-patch.sh' >&2
+	exit 1
+}
+
+bash <<'BASH'
+set -eu
+timespec_dir=$(mktemp -d)
+trap 'rm -rf "$timespec_dir"' EXIT
+source_dir="$timespec_dir/source"
+driver="$source_dir/crates/honk-core/src/control/udp_endpoint/driver.rs"
+urltest="$source_dir/crates/honk-outbound/src/alive/urltest.rs"
+mkdir -p "$(dirname "$driver")" "$(dirname "$urltest")"
+cat > "$driver" <<'DRIVER_RS'
+pub(super) fn monotonic_nanos() -> i64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    ts.tv_sec.saturating_mul(1_000_000_000).saturating_add(ts.tv_nsec)
+}
+DRIVER_RS
+cat > "$urltest" <<'URLTEST_RS'
+pub(super) fn monotonic_coarse_ns() -> u64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    (ts.tv_sec as u64).saturating_add(ts.tv_nsec as u64)
+}
+URLTEST_RS
+
+bash ci/honk-timespec-patch.sh "$source_dir" >/dev/null
+grep -qF 'let mut ts: libc::timespec = unsafe { std::mem::zeroed() };' "$driver" || {
+	echo 'the timespec patch did not reach the UDP driver' >&2
+	exit 1
+}
+grep -qF 'let mut ts: libc::timespec = unsafe { std::mem::zeroed() };' "$urltest" || {
+	echo 'the timespec patch did not reach the URLTest coarse clock' >&2
+	exit 1
+}
+grep -qF 'saturating_add(ts.tv_nsec as i64)' "$driver" || {
+	echo 'the timespec patch did not widen the driver tv_nsec sum' >&2
+	exit 1
+}
+# Idempotent: a second run finds no literal and must not fail.
+bash ci/honk-timespec-patch.sh "$source_dir" >/dev/null
+# A tree without the literal is not a failure: upstream may have rewritten it.
+mkdir -p "$source_dir/crates/honk-core/src"
+printf 'pub fn f() {}\n' > "$source_dir/crates/honk-core/src/lib.rs"
+bash ci/honk-timespec-patch.sh "$source_dir" >/dev/null
 BASH
 
 # The packaging and the runtime smoke tests are part of the pull request
