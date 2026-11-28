@@ -25,8 +25,8 @@ HONK_HASH_ARMV7?=SKIP
 # The Doona panel ships in this package. The core serves it from
 # /usr/share/doona, so the service must not depend on the arch-independent
 # LuCI package (which depends on honk) being installed.
-DOONA_ARCHIVE?=doona-4e8d5040-8ac1f16c2e40.tar.gz
-DOONA_HASH?=8ac1f16c2e402385443c2adc8180a24d29b8445f71d3c57417c32881d17972fd
+DOONA_ARCHIVE?=doona-4e8d5040-52c29be4069a.tar.gz
+DOONA_HASH?=52c29be4069adc9e5857710c84e5b3620f8402be52388931d37ae1ffb321ca63
 DOONA_SOURCE_URL?=https://github.com/szwjp/luci-app-honk/releases/download/staging
 
 -include $(CURDIR)/generated-doona-stage.mk
