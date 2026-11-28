@@ -81,8 +81,23 @@ rustup toolchain install "$EBPF_TOOLCHAIN" --profile minimal --component rust-sr
 # Only the architectures this invocation actually builds. The release pipeline
 # runs one architecture per matrix leg, and installing musl std for the other
 # two on every leg is pure download time.
+# rustup target add downloads a ~30MB rust-std component. Twice it exited 1
+# after a few seconds with nothing on stdout or stderr, which left the CI log
+# without a single line naming the cause. Retry a few times and, when every
+# attempt fails, print the last output: a silent exit is not diagnosable from
+# the workflow log alone.
 for a in $CORE_ARCHS; do
-	rustup target add --toolchain "$TOOLCHAIN" "${TARGETS[$a]}"
+	target="${TARGETS[$a]}"
+	ok=0
+	for attempt in 1 2 3 4 5; do
+		if out=$(rustup target add --toolchain "$TOOLCHAIN" "$target" 2>&1); then
+			ok=1
+			break
+		fi
+		echo "rustup target add $target failed (attempt $attempt): ${out:-<no output>}" >&2
+		sleep $((attempt * 10))
+	done
+	test "$ok" = 1 || { echo "cannot install the $target standard library" >&2; exit 1; }
 done
 rg -q '^clash-api\s*=' "$WORK_DIR/source/crates/honk-core/Cargo.toml"
 rg -q '^ebpf\s*=' "$WORK_DIR/source/crates/honk-core/Cargo.toml"
