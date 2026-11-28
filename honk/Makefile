@@ -11,7 +11,7 @@ PKG_RELEASE:=1
 # Pinned honk-core revision (daeuniverse/honk main), cross-compiled by
 # ci/build-core.sh. The per-architecture asset/hash are filled by that script;
 # keep a committed fallback so the feed still evaluates without a staging run.
-CORE_COMMIT:=4d1dca7c80498408df956fd03085e807b0a5533b
+CORE_COMMIT:=912157fea4685e5a78b9e3aa96e22f7a9e6c1ddc
 
 -include $(CURDIR)/generated-stage.mk
 

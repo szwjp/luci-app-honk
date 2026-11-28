@@ -102,9 +102,13 @@ done
 rg -q '^clash-api\s*=' "$WORK_DIR/source/crates/honk-core/Cargo.toml"
 rg -q '^ebpf\s*=' "$WORK_DIR/source/crates/honk-core/Cargo.toml"
 rg -q '^native-api\s*=' "$WORK_DIR/source/crates/honk-core/Cargo.toml"
-test -x "$WORK_DIR/source/ci/zigcc"
-test -x "$WORK_DIR/source/ci/zigcxx"
-test -x "$WORK_DIR/source/ci/zig-bindgen-env"
+# The Zig cross wrappers are ours (ci/zigcc, ci/zigcxx, ci/zig-bindgen-env),
+# not the pinned checkout's: upstream PR #547 deleted ci/zig* from honk and
+# moved its own musl builds into an Alpine container, which left every pinned
+# build failing at the old `test -x .../source/ci/zigcc` with no output at all.
+test -x "$ROOT/ci/zigcc"
+test -x "$ROOT/ci/zigcxx"
+test -x "$ROOT/ci/zig-bindgen-env"
 
 BPF_LINKER_TGZ="$WORK_DIR/bpf-linker.tar.zst"
 BPF_LINKER_URL="https://github.com/aya-rs/bpf-linker/releases/download/v$BPF_LINKER_VERSION/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
@@ -169,9 +173,9 @@ for arch in $CORE_ARCHS; do
 	lupper=$(printf '%s' "$target" | tr 'a-z-' 'A-Z_')
 
 	export ZIGCC_TARGET="$zig_target"
-	eval "export CC_${target//-/_}=\$PWD/ci/zigcc"
-	eval "export CXX_${target//-/_}=\$PWD/ci/zigcxx"
-	eval "export CARGO_TARGET_${lupper}_LINKER=\$PWD/ci/zigcc"
+	eval "export CC_${target//-/_}=\$ROOT/ci/zigcc"
+	eval "export CXX_${target//-/_}=\$ROOT/ci/zigcxx"
+	eval "export CARGO_TARGET_${lupper}_LINKER=\$ROOT/ci/zigcc"
 	# 32-bit musl: Rust's libc defaults time_t to i32 (c_long) unless the
 	# musl32_time64 cfg is set, but zig's musl headers (musl >= 1.2.0) use
 	# 64-bit time_t, so bindgen sees i64. Force the cfg to align libc's
@@ -182,7 +186,7 @@ for arch in $CORE_ARCHS; do
 		armv7) extra_rustflags=" --cfg musl32_time64" ;;
 	esac
 	eval "export CARGO_TARGET_${lupper}_RUSTFLAGS='-C link-self-contained=no${extra_rustflags}'"
-	BINDGEN_EXTRA_CLANG_ARGS=$("$PWD/ci/zig-bindgen-env" "$zig_target")
+	BINDGEN_EXTRA_CLANG_ARGS=$("$ROOT/ci/zig-bindgen-env" "$zig_target")
 	export BINDGEN_EXTRA_CLANG_ARGS
 
 	cargo +"$TOOLCHAIN" build --locked --release -p honk-core \
